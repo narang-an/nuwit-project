@@ -5,22 +5,8 @@ import os
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# page = st.sidebar.selectbox("Navigate", ["Home", "Upload Clothes", "View Closet", "Build Outfit"])
-
-if "page" not in st.session_state:
-    st.session_state.page = "Home"
-
-col1, col2, col3, col4 = st.columns(4)
-if col1.button("Home"):
-    st.session_state.page = "Home"
-if col2.button("Upload Clothes"):
-    st.session_state.page = "Upload Clothes"
-if col3.button("View Closet"):
-    st.session_state.page = "View Closet"
-if col4.button("Build Outfit"):
-    st.session_state.page = "Build Outfit"
-
-page = st.session_state.page
+st.sidebar.title("Navigation")
+page = st.sidebar.radio("Go to", ["Home", "Upload Clothes", "View Closet", "Build Outfit", "Saved Outfits"])
 
 if page == "Home":
     st.title("Welcome to Your CLoset!")
@@ -51,5 +37,8 @@ elif page == "Build Outfit":
     st.title("Build Your Outfit")
     st.write("Feature coming soon: drag and drop clothes onto your avatar")
 
+elif page == "Saved Outfits":
+    st.title("Saved Outfits")
+    st.write("Feature coming soon: view and manage your saved outfits")
 
 
