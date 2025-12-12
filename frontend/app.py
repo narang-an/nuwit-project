@@ -1,6 +1,7 @@
 import streamlit as st
 from PIL import Image
 import os
+import requests
 
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
