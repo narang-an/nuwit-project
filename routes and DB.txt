@@ -1,3 +1,4 @@
+
 - Files saved in uploads/ as "<Category>___<OriginalName>.<ext>".
 DB Schema:
 - clothing_items(id, filename UNIQUE, category)
@@ -9,3 +10,4 @@ Routes:
 - POST /save_outfit → creates outfit + links items via ensure_clothing_item
 - GET /get_outfits
 - GET /get_outfit_items?outfit_id=...
+- 
