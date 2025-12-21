@@ -9,8 +9,52 @@ API_BASE = "http://127.0.0.1:5001" # flask dev server
 st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Home", "Upload Clothes", "View Closet", "Build Outfit", "Saved Outfits"])
 
+def delete_clothing_item(category: str, filename: str, force: bool = False) -> bool:
+    try:
+        params = {"category": category, "filename": filename, "force": str(force).lower()}
+        resp = requests.delete(f"{API_BASE}/delete_clothing", params=params, timeout=15)
+        if resp.status_code in (200, 204):
+            st.success(f"Deleted: {filename}")
+            return True
+        elif resp.status_code == 409:
+            data = resp.json()
+            ids = data.get("outfit_ids", [])
+            st.warning(f"'{filename}' is used in outfits: {ids}. Delete blocked. "
+                       f"Click 'Force Delete' to remove it from those outfits.")
+            return False
+        else:
+            try:
+                msg = resp.json().get("error")
+            except Exception:
+                msg = resp.text
+            st.error(f"Delete failed ({resp.status_code}): {msg}")
+            return False
+    except Exception as e:
+        st.error(f"Delete failed: {e}")
+        return False
+
+def delete_outfit(outfit_id: int) -> bool:
+    try:
+        resp = requests.delete(f"{API_BASE}/delete_outfit", params={"outfit_id": outfit_id}, timeout=15)
+        if resp.status_code in (200, 204):
+            st.success(f"Outfit #{outfit_id} deleted.")
+            return True
+        elif resp.status_code == 404:
+            st.error("Outfit not found.")
+            return False
+        else:
+            try:
+                msg = resp.json().get("error")
+            except Exception:
+                msg = resp.text
+            st.error(f"Delete failed ({resp.status_code}): {msg}")
+            return False
+    except Exception as e:
+        st.error(f"Delete failed: {e}")
+        return False
+
 if page == "Home":
-    st.title("Welcome to Your CLoset!")
+    st.title("Welcome to Your CCloset!")
     st.write("Upload your clothes and create outfits on your avatar")
     
 elif page == "Upload Clothes":
@@ -47,6 +91,7 @@ elif page == "Upload Clothes":
             except Exception as e:
                 st.error(f"Upload failed: {str(e)}")
 
+
 elif page == "View Closet":
     st.title("Your Closet")
     cats = ["Top", "Bottom", "Shoes", "Accessory"]
@@ -63,11 +108,44 @@ elif page == "View Closet":
             if not files:
                 st.caption("No items in this category yet.")
             else:
-                cols = st.columns(4) #creates one row with 4 equal-width columns
+                cols = st.columns(4)
+
                 for i, fname in enumerate(files):
                     img_url = f"{API_BASE}/uploads/{fname}"
-                    with cols[i % 4]: #cycle through the 4 columns
+                    with cols[i % 4]:
                         st.image(img_url, width=150)
+
+                        # Keys for per-item state
+                        confirm_key = f"confirm_{cat}_{fname}"
+                        blocked_key = f"blocked_{cat}_{fname}"
+
+                        # Delete button with two-click confirm
+                        if st.button("Delete", key=f"del_{cat}_{fname}"):
+                            if st.session_state.get(confirm_key, False):
+                                ok = delete_clothing_item(cat, fname, force=False)
+                                # If deletion succeeded, clear flags and rerun
+                                if ok:
+                                    st.session_state.pop(confirm_key, None)
+                                    st.session_state.pop(blocked_key, None)
+                                    # Streamlit >= 1.30
+                                    st.rerun()
+                                else:
+                                    # Blocked: show Force Delete next render
+                                    st.session_state[blocked_key] = True
+                                    # Clear confirm so next click starts fresh
+                                    st.session_state.pop(confirm_key, None)
+                            else:
+                                st.warning("Click 'Delete' again to confirm.")
+                                st.session_state[confirm_key] = True
+
+                        # Show Force Delete ONLY if a previous delete was blocked
+                        if st.session_state.get(blocked_key, False):
+                            if st.button("Force Delete", key=f"force_{cat}_{fname}"):
+                                ok = delete_clothing_item(cat, fname, force=True)
+                                if ok:
+                                    st.session_state.pop(blocked_key, None)
+                                    st.rerun()
+
         except Exception as e:
             st.error(f"Error fetching {cat}: {str(e)}")
 
@@ -171,8 +249,6 @@ elif page == "Build Outfit":
     
 elif page == "Saved Outfits":
     st.title("Saved Outfits")
-    
-    #fetch saved outfits
     try:
         resp = requests.get(f"{API_BASE}/get_outfits", timeout=15)
         data = resp.json() if resp.ok else {}
@@ -184,13 +260,11 @@ elif page == "Saved Outfits":
     if not outfits:
         st.info("No saved outfits yet.")
     else:
-        # Select an outfit to preview
         options = {f"#{o['id']} — {o.get('outfit_name') or '(unnamed)'}": o["id"] for o in outfits}
         label = st.selectbox("Choose an outfit to preview", list(options.keys()))
         selected_id = options[label]
 
-
-        # Fetch items for that outfit
+        # Preview (your existing code)
         try:
             resp2 = requests.get(f"{API_BASE}/get_outfit_items", params={"outfit_id": selected_id}, timeout=15)
             di = resp2.json() if resp2.ok else {}
@@ -208,3 +282,16 @@ elif page == "Saved Outfits":
                 for entry in items.get(cat, []):
                     fname = entry["filename"]
                     st.image(f"{API_BASE}/uploads/{fname}", use_container_width=True)
+
+        st.divider()
+        # Confirmed delete
+        del_confirm_key = f"confirm_outfit_{selected_id}"
+        if st.button("Delete This Outfit"):
+            if st.session_state.get(del_confirm_key, False):
+                if delete_outfit(selected_id):
+                    st.session_state.pop(del_confirm_key, None)
+                    st.rerun()
+            else:
+                st.warning("Click delete again to confirm.")
+                st.session_state[del_confirm_key] = True
+

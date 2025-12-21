@@ -25,6 +25,12 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # debugging logging of requests and responses
+
+@app.before_request
+def log_request_info():
+    print(f">>> {request.method} {request.path} query={dict(request.args)}")
+
+
 """
 @app.before_request
 def log_request_info():
@@ -312,8 +318,110 @@ def get_outfit_items():
     
     return jsonify({"success": True, "outfit_id": outfit_id, "items": grouped})
 
+@app.route("/delete_clothing", methods=["DELETE"])
+def delete_clothing():
+    """
+    DELETE /delete_clothing?filename=<fname>&category=,cat.&force=<true|false>
+    - filename: required
+    - category: optional
+    - force: if true, cascade-remove outfits that use this item
+    """
+    # we've previously only used request.args but we may neen JSON if we do more complex deletes later
+    filename = request.args.get("filename", type=str) 
+    category = request.args.get("category", type=str)
+    force = str(request.args.get("force", "false")).strip().lower() == "true"
+
+    if not filename:
+        return jsonify({"success": False, "error": "Missing filename"}), 400
+    
+    # DB operations
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # find clothing_item row (may not exist if never used in an outfit)
+    cur.execute("SELECT id FROM clothing_items WHERE filename =?", (filename,))
+    row = cur.fetchone()
+    clothing_item_id = row["id"] if row else None
+
+    # if present in DB, check referencing outfits
+    if clothing_item_id is not None:
+        cur.execute("""
+                    SELECT DISTINCT outfit_id
+                    FROM outfit_items
+                    WHERE clothing_item_id = ?
+                    """, (clothing_item_id,))
+        references = [r["outfit_id"] for r in cur.fetchall()]
+        if references and not force:
+            conn.close()
+            return jsonify({
+                            "error": "Item is used in outfits",
+                            "outfit_ids": references
+                            }), 409
+
+        # Cascade remove references if needed
+        if references:
+            cur.execute("DELETE FROM clothing_items WHERE id=?", (clothing_item_id,))
+        cur.execute("DELETE FROM clothing_items where id=?", (clothing_item_id,))
+        conn.commit()
+    conn.close()
+
+    # delete physical file from uploads
+    file_path = os.path.join(UPLOAD_DIR, filename)
+    if os.path.exists(file_path):
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            #we have already cleaned DB refs; report warning but don't fail hard
+            return jsonify({"success": False, "warning": f"Removed references but failed to delete to delete file: {str(e)}"}), 200
+        
+    return ("", 204) #no content on success
+    # return jsonify({"success": True})
+
+
+@app.route("/delete_outfit", methods=["DELETE"])
+def delete_outfit():
+    """
+    DELETE /delete_outfit?outfit_id=<id>
+    Removes the outfit and its outfit_items. Returns counts for verification.
+    """
+    raw = request.args.get("outfit_id", None)
+    try:
+        outfit_id = int(raw)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid outfit_id", "got": raw}), 400
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Verify exists
+    cur.execute("SELECT id FROM outfits WHERE id = ?", (outfit_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Outfit not found", "outfit_id": outfit_id}), 404
+
+    # Delete join rows first
+    cur.execute("DELETE FROM outfit_items WHERE outfit_id = ?", (outfit_id,))
+    deleted_items = cur.rowcount  # number of join rows deleted
+
+    # Delete the outfit row
+    cur.execute("DELETE FROM outfits WHERE id = ?", (outfit_id,))
+    deleted_outfits = cur.rowcount
+
+    conn.commit()
+    conn.close()
+
+    # Return explicit result (200 OK) so the frontend can message & verify
+    return jsonify({
+        "success": True,
+        "deleted": {
+            "outfits": int(deleted_outfits),
+            "outfit_items": int(deleted_items)
+        },
+        "outfit_id": outfit_id
+    }), 200
+
 if __name__ == "__main__":
     init_db()
     # Run Flask on port 5001 instead of 5000
     app.run(host="0.0.0.0", port=5001, debug=True)
-
