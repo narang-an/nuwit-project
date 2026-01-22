@@ -1,0 +1,13 @@
+
+- Files saved in uploads/ as "<Category>___<OriginalName>.<ext>".
+DB Schema:
+- clothing_items(id, filename UNIQUE, category)
+- outfits(id, outfit_name, created_at)
+- outfit_items(id, outfit_id, clothing_item_id, category)
+Routes:
+- POST /uploads
+- GET /get_clothes?category=Top|Bottom|Shoes|Accessory → returns files: [filenames]
+- POST /save_outfit → creates outfit + links items via ensure_clothing_item
+- GET /get_outfits
+- GET /get_outfit_items?outfit_id=...
+- 
