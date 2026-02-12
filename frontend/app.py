@@ -5,19 +5,209 @@ from datetime import datetime
 # API_BASE = "http://localhost:5000" #Flask backend URL
 API_BASE = "http://127.0.0.1:5001" # flask dev server
 
+st.markdown("""
+    <style>
+    .stApp {
+    background-color: #D9F0FF;
+    }
+    </style>
+    """, unsafe_allow_html=True)
 
-st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to", ["Home", "Upload Clothes", "View Closet", "Build Outfit", "Saved Outfits"])
+if "page" not in st.session_state:
+    st.session_state.page = "Home"
+
+query_params = st.query_params
+if "page" in query_params:
+    st.session_state.page = query_params["page"]
+
+
+# top navigation bar code
+def render_navbar():
+    pages = ["Home", "Upload Clothes", "View Closet", "Build Outfit", "Saved Outfits"]
+    cols = st.columns(len(pages))
+
+    for col, page_name in zip(cols, pages):
+        with col:
+            is_active = st.session_state.page == page_name
+
+            if st.button(page_name, use_container_width=True, key=page_name):
+                st.session_state.page = page_name
+                st.rerun()
+
+            if is_active:
+                st.markdown(
+                    "<div style='text-align:center; margin-top:0;'><hr style='border:3px solid #FF4B4B; width:80%; margin:auto'></div>",
+                    unsafe_allow_html=True
+                )
+            else:
+                st.markdown(
+                    "<div style='text-align:center; margin-top:0;'><hr style='border:0px; width:80%; margin:auto'></div>",
+                    unsafe_allow_html=True
+                )
+
+page = st.session_state.page
 
 if page == "Home":
-    st.title("Welcome to Your CLoset!")
-    st.write("Upload your clothes and create outfits on your avatar")
+    st.markdown("<h1 style='text-align: center;'>Welcome to Your Virtual Closet!</h1>", unsafe_allow_html=True)
+    st.write("")
+    st.write("")
+
+#home page buttons
+    cols = st.columns(4)
+
+    pages = {
+        "Upload Clothes": "https://cdn-icons-png.flaticon.com/512/126/126477.png",
+        "View Closet": "https://cdn-icons-png.flaticon.com/512/148/148466.png",
+        "Build Outfit": "https://cdn-icons-png.flaticon.com/512/817/817214.png",
+        "Saved Outfits": "https://cdn-icons-png.flaticon.com/512/1077/1077035.png"
+    }
+
+    for col, (page, img) in zip(cols, pages.items()):
+        with col:
+            if st.button(page, use_container_width=True):
+                st.session_state.page = page
+                st.rerun()
+
+            st.markdown(
+            f"""
+            <div style="
+                cursor: pointer;
+                border-radius: 16px;
+                overflow: hidden;
+                box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            ">
+                <img src="{img}" style="width:100%;">
+                <div style="text-align:center; font-weight: 600; padding:8px;">
+                {page}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+            )
+
+        st.write("")
+#weather
+
+    city_coords = {
+        "New York": (40.7128, -74.0060),
+        "Boston": (42.3601, -71.0589)
+    }
+
+    city = st.selectbox("Select your city", list(city_coords.keys()))
+    lat, lon = city_coords[city]
+
+    def get_nws_forecast(lat, lon):
+        headers = {"User-Agent": "my-closet-app"}
+        try:
+
+            points_url = f"https://api.weather.gov/points/{lat},{lon}"
+            response = requests.get(points_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            points_data = response.json()
+
+            wfo = points_data["properties"]["gridId"]
+            x = points_data["properties"]["gridX"]
+            y = points_data["properties"]["gridY"]
+
+            forecast_url = f"https://api.weather.gov/gridpoints/{wfo}/{x},{y}/forecast"
+            forecast_resp = requests.get(forecast_url, headers=headers, timeout=10)
+            forecast_resp.raise_for_status()
+            forecast_data = forecast_resp.json()
+
+            periods = forecast_data.get("properties", {}).get("periods", [])
+            if not periods:
+                return {"error": "No data available"}
+
+            first = periods[0]
+            return{
+                "name": first.get("name", "N/A"),
+                "temperature": first.get("temperature", "N/A"),
+                "unit": first.get("temperatureUnit", "N/A"),
+                "forecast" : first.get("detailedForecast", "No detailed"),
+                "icon": first.get("icon", None),
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    with st.spinner("Fetching weather data..."):
+        weather = get_nws_forecast(lat, lon)
+
+    if "error" in weather:
+        st.error(f"Could not fetch weather data for {weather['error']}")
+    else:
+        col1, col2 = st.columns([2, 2])
+        with col1:
+
+            st.markdown("<h3 style='text-align:center'>Today's Weather</h3>", unsafe_allow_html=True)
+
+            st.markdown(
+                f"""
+                <div style="
+                border: 2px solid;
+                border-radius: 5px;
+                padding: 20px;
+                text-align: center;
+                background-color:;
+                
+                <h4 style='text-align:center'>{city} - {weather['name']} {weather['temperature']} {weather['unit']}</h4>
+                
+                
+                <p> {weather['forecast']}</p>
+                </div>
+                """,
+                unsafe_allow_html=True
+            )
+
+        #Recommended Outfit
+        with col2:
+            st.markdown("<h3 style='text-align:center'>Recommended Outfit</h3>", unsafe_allow_html=True)
+
+            resp = requests.get(f"{API_BASE}/get_outfits", timeout=10)
+            outfits = resp.json().get("outfits", []) if resp.ok else []
+
+            def choose_outfit(weather, outfits):
+                if not outfits:
+                    return None
+
+                temp = weather.get("temperature", 70)
+
+                if temp < 50:
+                    return outfits[0]
+                elif temp > 75:
+                    return outfits[-1]
+                else:
+                    return outfits[len(outfits)//2]
+
+            suggested = choose_outfit(weather, outfits)
+            if suggested:
+
+                resp = requests.get(
+                    f"{API_BASE}/get_outfit_items",
+                    params={"outfit_id": suggested["id"]},
+                    timeout=10)
+                items = resp.json().get("items", {}) if resp.ok else {}
+
+                cols = st.columns(4)
+                for i, category in enumerate(["Top", "Bottom", "Shoes", "Accessory"]):
+                    with cols[i]:
+                        st.markdown(f"**{category}**", unsafe_allow_html=True)
+                        for entry in items.get(category, []):
+                            st.image(f"{API_BASE}/uploads/{entry['filename']}", use_container_width=True)
+
+
+    st.write("")
+    st.write("")
+
+
     
 elif page == "Upload Clothes":
-    st.title("Upload Clothes")
+    render_navbar()
+    st.markdown("------")
+    st.title("Upload Clothes:")
     uploaded_file = st.file_uploader("Choose an image", type=["jpg", "jpeg", "png"])
     category = st.selectbox("Select Category", ["Top", "Bottom", "Shoes", "Accessory"])
-    
+
+
     if uploaded_file is not None:
 
         st.image(uploaded_file, caption="Uploaded Image", use_container_width=True)
@@ -48,32 +238,83 @@ elif page == "Upload Clothes":
                 st.error(f"Upload failed: {str(e)}")
 
 elif page == "View Closet":
-    st.title("Your Closet")
-    cats = ["Top", "Bottom", "Shoes", "Accessory"]
+    render_navbar()
+    st.markdown("------")
+    st.title("In Your Closet:")
 
-    for cat in cats:
-        st.header(cat)
-        try:
-            resp = requests.get(f"{API_BASE}/get_clothes", params={"category": cat}, timeout=20)
-            if not resp.ok:
-                st.error(f"Failed to fetch {cat}: {resp.status_code}")
+    st.markdown("""
+    <style>
+    .closet-card {
+        width: 100%;
+        height: 180px;
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        margin-bottom: 10px;
+        transition: transform 0.2s ease, box-shadow: 0.2s ease;
+    }
+    
+    .closet-card img{
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+    }
+    
+    .closet-card:hover{
+        transform: scale(1.08);
+        box-shadow: 0 8px 2-px rgba(0,0,0,0.35);
+        border: 2px solid #FF4B4B;
+        z-index: 10;
+        position: relative;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+    tabs = st.tabs(["Tops", "Bottoms", "Shoes", "Accessories"])
+
+    cat_map = {
+        "Tops": "Top",
+        "Bottoms": "Bottom",
+        "Shoes": "Shoes",
+        "Accessories": "Accessory",
+    }
+
+    for tab_label, tab in zip(cat_map.keys(), tabs):
+        with tab:
+            cat = cat_map[tab_label]
+
+            try:
+                resp = requests.get(
+                    f"{API_BASE}/get_clothes",
+                    params={"category": cat},
+                    timeout=10
+                )
+                files = resp.json().get("files", []) if resp.ok else []
+
+            except Exception as e:
+                st.error(f" Error fetching {cat}: {str(e)}")
+                files = []
+
+            if not files:
+                st.info("No items yet.")
                 continue
 
-            files = resp.json().get("files", [])
-            if not files:
-                st.caption("No items in this category yet.")
-            else:
-                cols = st.columns(4) #creates one row with 4 equal-width columns
-                for i, fname in enumerate(files):
-                    img_url = f"{API_BASE}/uploads/{fname}"
-                    with cols[i % 4]: #cycle through the 4 columns
-                        st.image(img_url, width=150)
-        except Exception as e:
-            st.error(f"Error fetching {cat}: {str(e)}")
+            cols = st.columns(5)
+            for i, fname in enumerate(files):
+                with cols[i % 5]:
+                    st.markdown(f"""
+                    <div class='closet-card'>
+                        <img src="{API_BASE}/uploads/{fname}">>,
+                    </div>
+                    """, unsafe_allow_html=True)
+
+
 
 elif page == "Build Outfit":
-
-    st.title("Build Your Outfit")
+    render_navbar()
+    st.markdown("------")
+    st.title("Build Your Outfit:")
 
     # 1) Categories & options container
     categories = ["Top", "Bottom", "Shoes", "Accessory"]
@@ -88,90 +329,154 @@ elif page == "Build Outfit":
     except Exception as e:
         st.error(f"Error fetching clothes: {e}")
 
-    # 3) Multi-select per category
-    st.subheader("Select items for your outfit")
-    selections = {}
-    cols = st.columns(4)
-    for i, cat in enumerate(categories):
-        with cols[i]:
-            selections[cat] = st.multiselect(cat, grouped_options[cat], default=[])
+    if "outfit_selections" not in st.session_state:
+        st.session_state.outfit_selections = {cat: [] for cat in categories}
 
-    # 4) Simple preview (stacked by category)
+    st.markdown("""
+    <style>
+    .item-card {
+        width: 100%;
+        height: 180px;
+        overflow: hidden;
+        border-radius: 12px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+        margin-bottom: 10px;
+        transition: transform 0.2s ease, box-shadow: 0.2s ease;
+        cursor: pointer;
+    }
+    .item-card img{
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+    .item-card:hover{
+        transform: scale(1.08);
+        box-shadow: 0 8px 2-px rgba(0,0,0,0.35);
+    }
+    .selected {
+        border: 3px solid #FF4B4B;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    tabs = st.tabs(categories)
+
+    for tab_label, tab in zip(categories, tabs):
+        with tab:
+            files = grouped_options[tab_label]
+            if not files:
+                st.info(f"No {tab_label} items yet.")
+                continue
+
+            cols = st.columns(5)
+            for i, fname in enumerate(files):
+                with cols[i % 5]:
+                    selected_class = "selected" if fname in st.session_state.outfit_selections[tab_label] else ""
+
+                    clicked = st.button("", key=f"{tab_label}_{fname}")
+                    if clicked:
+                        if fname in st.session_state.outfit_selections[tab_label]:
+                            st.session_state.outfit_selections[tab_label].remove(fname)
+                        else:
+                            st.session_state.outfit_selections[tab_label].append(fname)
+
+                    st.markdown(f"""
+                        <div class='item-card {selected_class}'>
+                        <img src="{API_BASE}/uploads/{fname}">
+                        </div>
+                        """, unsafe_allow_html=True)
+
+    # outfit preview
     st.subheader("Outfit Preview")
     preview_cols = st.columns(4)
     for i, cat in enumerate(categories):
         with preview_cols[i]:
             st.markdown(f"**{cat}**")
-            if selections[cat]:
-                for fname in selections[cat]:
-                    img_url = f"{API_BASE}/uploads/{fname}"
-                    st.image(img_url, use_container_width=True)
-            else:
-                st.caption("No items selected")
+            for fname in st.session_state.outfit_selections[cat]:
+                st.image(f"{API_BASE}/uploads/{fname}", use_container_width=True)
+            if not st.session_state.outfit_selections[cat]:
+                st.caption("No items selected.")
 
-    # 5) Save outfit (form)
-    st.subheader("Save Outfit")
-
-    # Stable default name (won't change every rerun)
+    # save outfit
     if "default_outfit_name" not in st.session_state:
-        st.session_state["default_outfit_name"] = "Outfit_" + datetime.now().strftime("%Y%m%d_%H%M%S")
+        st.session_state["default_outfit_name"] = "Outfit_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+
     default_name = st.session_state["default_outfit_name"]
 
     with st.form("save_outfit_form", clear_on_submit=False):
-        outfit_name = st.text_input(
-            "Outfit Name:",
-            value=default_name,  # show editable default value
-            key="outfit_name_input"
-        )
-
+        outfit_name = st.text_input("Outfit Name", value=default_name, key="outfit_name_input")
         submit = st.form_submit_button("Save Outfit")
 
         if submit:
-            # Optional validation: require at least one selection
-            if not any(selections.values()):
+            if not any(st.session_state.outfit_selections.values()):
                 st.error("Please select at least one clothing item before saving.")
             else:
                 name_to_save = (outfit_name or "").strip() or default_name
-
                 payload = {
                     "outfit_name": name_to_save,
-                    "clothing_items": selections  # dict: {category: [filenames]}
+                    "clothing_items": st.session_state.outfit_selections
                 }
-
                 try:
-                    with st.spinner("Saving outfit..."):
+                    with st.spinner("Saving Outfit..."):
                         resp = requests.post(f"{API_BASE}/save_outfit", json=payload, timeout=20)
+                        result = resp.json() if resp.ok else None
 
-                    # Safe JSON parsing
-                    try:
-                        result = resp.json()
-                    except ValueError:
-                        result = None
+                    if resp.ok and result and result.get("success"):
+                        returned_name = result.get("outfit_name", name_to_save)
+                        st.success(f"Outfit saved! ID # {result['outfit_id']} - {returned_name}")
+                        st.session_state["default_outfit_name"] = "Outfit_" + datetime.now().strftime("%Y%m%d-%H%M%S")
 
-                    if resp.ok:
-                        if result and result.get("success"):
-                            returned_name = result.get("outfit_name", name_to_save)
-                            st.success(f"Outfit saved! ID # {result['outfit_id']} — {returned_name}")
-
-                            # Rotate a new default name for the next save (optional)
-                            st.session_state["default_outfit_name"] = "Outfit_" + datetime.now().strftime("%Y%m%d_%H%M%S")
-                        else:
-                            msg = (result.get("error") if result else resp.text) or "Unknown error"
-                            st.error(f"Failed to save outfit: {msg}")
+                        st.session_state.outfit_selections = {cat: [] for cat in categories}
                     else:
-                        err_msg = (
-                            result.get("error") if (result and isinstance(result, dict) and "error" in result)
-                            else resp.text or f"HTTP {resp.status_code}"
-                        )
-                        st.error(f"Failed to save outfit: {err_msg}")
-
+                        msg = (result.get("error") if result else resp.text) or "Unknown error"
+                        st.error(f"Failed to save outfit: {msg}")
                 except Exception as e:
                     st.error("Error contacting backend.")
                     st.exception(e)
     
 elif page == "Saved Outfits":
-    st.title("Saved Outfits")
+    render_navbar()
+    st.markdown("------")
+    st.title("Saved Outfits:")
+
+    st.markdown("""
+    <style>
+    .outfit-card {
+        background-color: white;
+        border-radius: 16px;
+        padding: 10px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        margin-bottom: 25px;
+        transition: transform 0.2 ease, box-shadow 0.2 ease;
+    }
     
+    .outfit-card:hover {
+        transform: scale(1.03);
+        box-shadow: 0 8px 2-px rgba(0,0,0,0.25);
+    }
+    
+    .mini-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        margin-bottom: 10px;
+    }
+    
+    .mini-grid img {
+        width: 100%;
+        height: 70px;
+        object-fit: cover;
+        border-radius: 10px;
+    }
+    
+    .outfit-title {
+        text-align: center;
+        font-weight: 600;
+        margin-top: 5px;
+    }   
+    </style>
+    """, unsafe_allow_html=True)
+
     #fetch saved outfits
     try:
         resp = requests.get(f"{API_BASE}/get_outfits", timeout=15)
@@ -184,27 +489,53 @@ elif page == "Saved Outfits":
     if not outfits:
         st.info("No saved outfits yet.")
     else:
-        # Select an outfit to preview
-        options = {f"#{o['id']} — {o.get('outfit_name') or '(unnamed)'}": o["id"] for o in outfits}
-        label = st.selectbox("Choose an outfit to preview", list(options.keys()))
-        selected_id = options[label]
+        categories = ["Top", "Bottom", "Shoes", "Accessory"]
 
+        for row_start in range(0, len(outfits), 3):
 
-        # Fetch items for that outfit
-        try:
-            resp2 = requests.get(f"{API_BASE}/get_outfit_items", params={"outfit_id": selected_id}, timeout=15)
-            di = resp2.json() if resp2.ok else {}
-            items = di.get("items", {})
-        except Exception as e:
-            items = {}
-            st.error(f"Error fetching outfit items: {e}")
+           row_outfits = outfits[row_start:row_start+3]
+           cols = st.columns(len(row_outfits))
 
-        st.subheader("Outfit Preview")
-        cats = ["Top", "Bottom", "Shoes", "Accessory"]
-        cols = st.columns(4)
-        for i, cat in enumerate(cats):
-            with cols[i]:
-                st.markdown(f"**{cat}**")
-                for entry in items.get(cat, []):
-                    fname = entry["filename"]
-                    st.image(f"{API_BASE}/uploads/{fname}", use_container_width=True)
+           for col, out in zip(cols, row_outfits):
+               with col:
+                   outfit_id = out["id"]
+                   outfit_name = out.get("outfit_name") or f"Outfit_{outfit_id}"
+
+               # Fetch items for that outfit
+               try:
+                    resp2 = requests.get(f"{API_BASE}/get_outfit_items", params={"outfit_id": outfit_id}, timeout=15)
+                    data2 = resp2.json() if resp2.ok else {}
+                    items = data2.get("items", {})
+
+               except:
+                    items = {}
+
+               image_urls = []
+               for cat in categories:
+                    cat_items = items.get(cat, [])
+                    if cat_items:
+                        fname = cat_items[0]["filename"]
+                        image_urls.append(f"{API_BASE}/uploads/{fname}")
+                    else:
+                        image_urls.append(None)
+
+               st.markdown("<div class='outfit-card'>", unsafe_allow_html=True)
+
+               st.markdown("<div class='mini-grid'>", unsafe_allow_html=True)
+
+        grid_html = "<div class='mini-grid'>"
+        for url in image_urls:
+            grid_html += f"<img src='{url}'>"
+        else:
+            grid_html += "<div style='height:70px;background:#f0f0f0;border-radius:10px;'></div>"
+
+        grid_html += "</div>"
+
+        card_html = f"""
+        <div class='outfit-card'>
+            {grid_html}
+            <div class='outfit-title'>{outfit_name}</div>
+        </div>
+        """
+
+        st.markdown(card_html, unsafe_allow_html=True)
