@@ -5,3 +5,9 @@ First Iteration: Website that allows user to upload images of clothing to create
 Second Iteration: Expand the website to allow other uses to join the user, so multiple users can plan cute group outfits. 
 
 Tech Stack: Streamlit for frontend, flask for backend
+
+To Run:
+- install Node.js
+- npm install
+- npm run dev
+- copy and paste the link into browser

@@ -1,10 +1,12 @@
 import streamlit as st
 import requests
 from datetime import datetime
+from urllib.parse import quote
 
 # API_BASE = "http://localhost:5000" #Flask backend URL
 API_BASE = "http://127.0.0.1:5001" # flask dev server
 
+st.set_page_config(layout="wide")
 st.markdown("""
     <style>
     .stApp {
@@ -246,7 +248,7 @@ elif page == "View Closet":
     <style>
     .closet-card {
         width: 100%;
-        height: 180px;
+        height: 320px;
         overflow: hidden;
         border-radius: 12px;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
@@ -256,7 +258,7 @@ elif page == "View Closet":
     
     .closet-card img{
         width: 100%;
-        height: 180px;
+        height: 320px;
         object-fit: cover;
     }
     
@@ -309,8 +311,6 @@ elif page == "View Closet":
                     </div>
                     """, unsafe_allow_html=True)
 
-
-
 elif page == "Build Outfit":
     render_navbar()
     st.markdown("------")
@@ -336,7 +336,7 @@ elif page == "Build Outfit":
     <style>
     .item-card {
         width: 100%;
-        height: 180px;
+        height: 300px;
         overflow: hidden;
         border-radius: 12px;
         box-shadow: 0 4px 10px rgba(0,0,0,0.15);
@@ -441,101 +441,123 @@ elif page == "Saved Outfits":
 
     st.markdown("""
     <style>
-    .outfit-card {
-        background-color: white;
-        border-radius: 16px;
-        padding: 10px;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-        margin-bottom: 25px;
-        transition: transform 0.2 ease, box-shadow 0.2 ease;
+    
+    div[data-testid="stVerticleBlock"]:has(.outfit-card-anchor):hover {
+        transform: translateY(-4px);
+        box-shadow: 0 14px 30px rgba(0,0,0,0.18);
     }
     
-    .outfit-card:hover {
-        transform: scale(1.03);
-        box-shadow: 0 8px 2-px rgba(0,0,0,0.25);
+    div[data-testid="stVerticleBlock"]:has(.outfit-card-anchor):hover {
+        transform: translateY(-4px);
+        box-shadow: 0 14px 30px rgba(0,0,0,0.18);
     }
     
-    .mini-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 6px;
-        margin-bottom: 10px;
-    }
-    
-    .mini-grid img {
+    .image-wrapper {
+        position: relative;
         width: 100%;
-        height: 70px;
+        aspect-ratio: 1 / 1;
+        overflow: hidden;
+        border-radius: 12px;
+    }
+    
+    .image-wrapper img {
+        width: 100%;
+        height: 100%;
         object-fit: cover;
-        border-radius: 10px;
+        display: block;
+    }
+    
+    .category-placeholder {
+        height: 100%;
+        background: #f3f4f6;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #999;
+        font-size: 12px
+        border-radius: 12px;
+    }
+    
+    .extra-badge {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        background: #4a6cf7;
+        color: white;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 12px;
+        font-weight: 600;
     }
     
     .outfit-title {
         text-align: center;
         font-weight: 600;
-        margin-top: 5px;
-    }   
+        font-size: 14px;
+        margin-top: 6px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    #fetch saved outfits
+    #getting saved outfits
+
     try:
-        resp = requests.get(f"{API_BASE}/get_outfits", timeout=15)
+        resp = requests.get(f"{API_BASE}/get_outfits", timeout=20)
         data = resp.json() if resp.ok else {}
         outfits = data.get("outfits", [])
     except Exception as e:
         outfits = []
-        st.error(f"Error fetching outfits: {e}")
+        st.error(f"Error getting outfits: {e}")
 
     if not outfits:
         st.info("No saved outfits yet.")
     else:
+        from urllib.parse import quote
+        import unicodedata
         categories = ["Top", "Bottom", "Shoes", "Accessory"]
 
         for row_start in range(0, len(outfits), 3):
+            row_outfits = outfits[row_start:row_start + 3]
+            cols = st.columns(len(row_outfits), gap="small")
 
-           row_outfits = outfits[row_start:row_start+3]
-           cols = st.columns(len(row_outfits))
+            for col, outfit in zip(cols, row_outfits):
+                with col:
+                    st.markdown("<div class='outfit-card-anchor'></div>", unsafe_allow_html=True)
+                    outfit_id = outfit["id"]
+                    outfit_name = outfit.get("outfit_name") or f"Outfit_{outfit_id}"
 
-           for col, out in zip(cols, row_outfits):
-               with col:
-                   outfit_id = out["id"]
-                   outfit_name = out.get("outfit_name") or f"Outfit_{outfit_id}"
+                    st.markdown(f"<div class='outfit-title'>{outfit_name}</div>", unsafe_allow_html=True)
 
-               # Fetch items for that outfit
-               try:
-                    resp2 = requests.get(f"{API_BASE}/get_outfit_items", params={"outfit_id": outfit_id}, timeout=15)
-                    data2 = resp2.json() if resp2.ok else {}
-                    items = data2.get("items", {})
+                    try:
+                        resp2 = requests.get(
+                            f"{API_BASE}/get_outfit_items",
+                            params={"outfit_id": outfit_id},
+                            timeout=20
+                        )
+                        data2 = resp2.json() if resp2.ok else {}
+                        items_by_category = data2.get("items", {})
+                    except Exception as e:
+                        items_by_category = {}
 
-               except:
-                    items = {}
 
-               image_urls = []
-               for cat in categories:
-                    cat_items = items.get(cat, [])
-                    if cat_items:
-                        fname = cat_items[0]["filename"]
-                        image_urls.append(f"{API_BASE}/uploads/{fname}")
-                    else:
-                        image_urls.append(None)
+                    mini_cols = st.columns(2)
+                    for i, cat in enumerate(categories):
+                        with mini_cols[i % 2]:
+                            cat_items = items_by_category.get(cat, [])
 
-               st.markdown("<div class='outfit-card'>", unsafe_allow_html=True)
+                            if cat_items:
+                                item = cat_items[0]
+                                fname = item["filename"]
+                                img_path = f"{API_BASE}/uploads/{quote(fname, safe='')}"
 
-               st.markdown("<div class='mini-grid'>", unsafe_allow_html=True)
+                                badge_html = ""
 
-        grid_html = "<div class='mini-grid'>"
-        for url in image_urls:
-            grid_html += f"<img src='{url}'>"
-        else:
-            grid_html += "<div style='height:70px;background:#f0f0f0;border-radius:10px;'></div>"
+                                if cat == "Accessory" and len(cat_items) > 1:
+                                    badge_html = f"<div class='extra-badge'>+{len(cat_items)-1}</div>"
 
-        grid_html += "</div>"
+                                st.markdown(f"""<div class='image-wrapper'><img src='{img_path}'>{badge_html}</div>""", unsafe_allow_html=True)
+                            else:
+                                st.markdown(f"<div class='category-placeholder'>{cat}</div>", unsafe_allow_html=True)
 
-        card_html = f"""
-        <div class='outfit-card'>
-            {grid_html}
-            <div class='outfit-title'>{outfit_name}</div>
-        </div>
-        """
 
-        st.markdown(card_html, unsafe_allow_html=True)
+
